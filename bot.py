@@ -1,14 +1,17 @@
 import math
 import time
 import json
+import logging
 import requests
 from colorama import Fore
 import discord, time
 from discord.ext import tasks
 from discord.ext import commands
+from discord.ext.commands import MissingPermissions
+from discord.ext.commands import has_permissions, CheckFailure
 
-intents = discord.Intents.default()
-intents.members = True
+intents = discord.Intents(messages=True)
+intents.messages = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="+", intents=intents)
@@ -36,18 +39,30 @@ session.headers.update({
 @bot.event
 async def on_ready():
     checkloop.start()
-    print(f"{Fore.LIGHTGREEN_EX}Checker has started!{Fore.RESET}")
+    print(r"""
 
-async def send(embed):
+  ____                _______             _             
+ |  _ \              |__   __|           | |            
+ | |_) | __ _ _ __      | |_ __ __ _  ___| | _____ _ __ 
+ |  _ < / _` | '_ \     | | '__/ _` |/ __| |/ / _ \ '__|
+ | |_) | (_| | | | |    | | | | (_| | (__|   <  __/ |   
+ |____/ \__,_|_| |_|    |_|_|  \__,_|\___|_|\_\___|_|   
+                                                        
+            """)
+    print(f"{Fore.LIGHTGREEN_EX}Hypixel ban tracker has been started.{Fore.RESET}")
+    print(f"{Fore.LIGHTGREEN_EX}Bot Prefix: +{Fore.RESET}")
+    await bot.change_presence(activity=discord.Game(name=f"+cmd to get started! | {len(bot.guilds)} Servers"))
+    
+async def send(*, message):
     for channel_id in channels:
         try:
-            channel = bot.get_channel(channel_id)
-            await channel.send(embed=embed)
+            channel = await bot.fetch_channel(channel_id)
+            await channel.send(message)
         except Exception as e:
-            print(e)
+            print("ERROR:", e, "| Channel ID:", channel_id, "-", channel)
             continue
 
-async def addChannel(channel_id):
+async def newChannel(channel_id):
     channels.append(channel_id)
     config = {
         "token": bot_token,
@@ -57,7 +72,7 @@ async def addChannel(channel_id):
         f.write(json.dumps(config, indent=4))
         f.close()
 
-async def removeChannel(channel_id):
+async def delChannel(channel_id):
     channels.remove(channel_id)
     config = {
         "token": bot_token,
@@ -66,31 +81,103 @@ async def removeChannel(channel_id):
     with open("config.json", "w") as f:
         f.write(json.dumps(config, indent=4))
         f.close()
-
+        
 @bot.command()
-async def subscribe(ctx, channel: int):
+async def cmd(ctx):
     try:
-        await addChannel(channel)
-        await ctx.send(f"Successfully subscribed to channel <#{channel}>!")
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description="**+cmd** - Show this help command.\n**+addchannel** - Add channel to the list.\n**+removechannel** - Remove channel from the list.\n**+ping** - Pong!",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
     except Exception as e:
-        await ctx.send(f"Usage: `+subscribe <channel id>`")
         print(e)
 
 @bot.command()
-async def unsubscribe(ctx, channel: int):
+async def ping(ctx):
     try:
-        await addChannel(channel)
-        await ctx.send(f"Successfully unsubscribed to channel <#{channel}>.")
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description=f"Pong! {round (bot.latency * 1000)} ms",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
     except Exception as e:
-        await ctx.send(f"Usage: `+unsubscribe <channel id>`")
+        print(e)
+        
+@bot.command()
+async def addchannel(ctx, channel: int):
+    try:
+        await newChannel(channel)
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description=f"Added <#{channel}> to the list! (please make sure to give the bot permission to send chat message on the channel.)",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+    except Exception as e:
         print(e)
 
+@addchannel.error
+async def addchannel_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description="Usage: +addchannel [channel id]",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+    if isinstance(error, commands.MissingPermissions):
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description="You don't have permission to use this command! (administrator)",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+
+@bot.command()
+async def removechannel(ctx, channel: int):
+    try:
+        await delChannel(channel)
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description=f"Removed <#{channel}> from the list.",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+    except Exception as e:
+        print(e)
+        
+@removechannel.error
+async def removechannel_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description="Usage: +removechannel [channel id]",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+    if isinstance(error, commands.MissingPermissions):
+        embed = discord.Embed(
+            title="Hypixel Ban Tracker",
+            description="You don't have permission to use this command! (administrator)",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+    else:
+        raise(error)
+
+@tasks.loop(seconds=12)
+async def updaterpc():
+    await bot.change_presence(activity=discord.Game(name=f"+cmd to get started! | {len(bot.guilds)} Servers"))
+        
 # The actual checker
-@tasks.loop(seconds=0.1)
+@tasks.loop(seconds=0.2)
 async def checkloop():
     global owd_bans, ostaff_bans, session
     resp = session.get("https://api.plancke.io/hypixel/v1/punishmentStats")
-    # print(resp.text)
+    #print(resp.text)
     wd_bans = resp.json().get("record").get("watchdog_total")
     staff_bans = resp.json().get("record").get("staff_total")
     if owd_bans != None and ostaff_bans != None:
@@ -98,18 +185,20 @@ async def checkloop():
         sban_dif = staff_bans - ostaff_bans
 
         if wban_dif > 0:
-            embed = discord.Embed(
-                color=discord.Color.from_rgb(247, 57, 24),
-                description=f"<t:{math.floor(time.time())}:R>",
-            ).set_author(name=f"Watchdog banned {wban_dif} player{'s' if wban_dif > 1 else ''}!")
-            await send(embed=embed)
+            #embed = discord.Embed(
+                #color=discord.Color.from_rgb(247, 57, 24),
+                #description=f"<t:{math.floor(time.time())}:R>",
+            #).set_author(name=f"Watchdog banned {wban_dif} player{'s' if wban_dif > 1 else ''}!")
+            #await bot.change_presence(activity=discord.Game(name=f"Watchdog: {wban_dif} player{'s' if wban_dif > 1 else ''}!"))
+            await send(message=f":dog: Watchdog banned **{wban_dif}** player{'s' if wban_dif > 1 else ''}! <t:{math.floor(time.time())}:R>")
 
         if sban_dif > 0:
-            embed = discord.Embed(
-                color=discord.Color.from_rgb(247, 229, 24),
-                description=f"<t:{math.floor(time.time())}:R>",
-            ).set_author(name=f"Staff banned {sban_dif} player{'s' if sban_dif > 1 else ''}!")
-            await send(embed=embed)
+            #embed = discord.Embed(
+                #color=discord.Color.from_rgb(247, 229, 24),
+                #description=f"<t:{math.floor(time.time())}:R>",
+            #).set_author(name=f"Staff banned {sban_dif} player{'s' if sban_dif > 1 else ''}!")
+            #await bot.change_presence(activity=discord.Game(name=f"Staff: {sban_dif} player{'s' if sban_dif > 1 else ''}!"))
+            await send(message=f":man_detective: Staff banned **{sban_dif}** player{'s' if sban_dif > 1 else ''}! <t:{math.floor(time.time())}:R>")
 
     owd_bans = wd_bans
     ostaff_bans = staff_bans
