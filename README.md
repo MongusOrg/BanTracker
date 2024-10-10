@@ -1,8 +1,8 @@
 # BanTracker
-A simple discord bot that tracks bans on Hypixel using their API
+A simple discord bot that tracks bans on Hypixel using their public API
 
 ## Usage
-Open config.json and insert your API Key(s), bot token, and the channel ID of the channel you want the bans to be logged in.
+Open config.json and insert your bot token and the channel ID of the channel you want the bans to be logged in.
 
 Example:
 ``` json
